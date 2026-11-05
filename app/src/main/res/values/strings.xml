@@ -1,0 +1,50 @@
+<resources>
+    <string name="app_name">LIQUIWALL</string>
+    <string name="wallpaper_description">Fluid spring-damper jelly physics live wallpaper with depth parallax masking.</string>
+    <string name="set_wallpaper">Apply Wallpaper</string>
+    <string name="physics_settings">Spring-Damper Physics</string>
+    <string name="stiffness_label">Spring Stiffness k: %1$.1f</string>
+    <string name="damping_label">Damping Coefficient c: %1$.2f</string>
+    <string name="tilt_label">Tilt Sensitivity: %1$.1f</string>
+    <string name="parallax_label">Parallax Depth: %1$.2f</string>
+    <string name="mask_editor">Parallax Mask Studio</string>
+    <string name="brush_size">Brush Size</string>
+    <string name="draw_mode">Draw Mask</string>
+    <string name="erase_mode">Erase</string>
+    <string name="test_physics_mode">Test Physics</string>
+    <string name="clear_mask">Clear Mask</string>
+    <string name="preview_instruction">Touch &amp; tilt screen to test fluid jelly response</string>
+
+    <!-- Custom Photo Picker -->
+    <string name="pick_custom_photo">Select Internal Photo</string>
+    <string name="reset_default_photo">Reset to Default</string>
+    <string name="photo_updated_toast">Wallpaper image updated successfully!</string>
+
+    <!-- Smart Circle Auto-Fill -->
+    <string name="auto_fill_circle_title">Auto-Fill on Circle</string>
+    <string name="auto_fill_circle_desc">Automatically fills the enclosed area when you draw a closed circle loop</string>
+
+    <!-- UI Editor / Layout Customization -->
+    <string name="edit_ui_btn">Edit UI</string>
+    <string name="ui_editor_title">UI &amp; Layout Customization</string>
+    <string name="ui_editor_subtitle">Customize preview frame dimensions and panel visibility</string>
+    <string name="preview_size_label">Preview Window Height: %1$d dp</string>
+    <string name="aspect_ratio_label">Preview Aspect Ratio</string>
+    <string name="ratio_phone_standard">9:16 (Phone)</string>
+    <string name="ratio_phone_tall">9:19.5 (Tall)</string>
+    <string name="ratio_square">1:1 (Square)</string>
+    <string name="panel_visibility_title">Panel Visibility</string>
+    <string name="show_actions_title">Quick Action Buttons</string>
+    <string name="show_toolbar_title">Brush Tool Toolbar</string>
+    <string name="show_status_title">Status Badges Bar</string>
+    <string name="show_tabs_title">Physics &amp; Parallax Tabs</string>
+    <string name="presets_title">Layout Presets</string>
+    <string name="preset_full">Full Studio</string>
+    <string name="preset_minimal">Minimal Preview</string>
+    <string name="preset_painter">Painter Focus</string>
+
+    <!-- Project Export & Save -->
+    <string name="save_export_project">Save Project</string>
+    <string name="export_success">Project saved successfully!</string>
+    <string name="close">Close</string>
+</resources>
