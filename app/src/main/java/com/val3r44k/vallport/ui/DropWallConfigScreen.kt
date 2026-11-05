@@ -43,6 +43,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
@@ -110,6 +111,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
 enum class AppScreen {
     WELCOME,
@@ -152,13 +154,13 @@ fun DropWallConfigScreen() {
     var damping by remember { mutableFloatStateOf(config.damping) }
     var tiltSensitivity by remember { mutableFloatStateOf(config.tiltSensitivity) }
     var touchRadius by remember { mutableFloatStateOf(config.touchRadius) }
+    var touchImpulse by remember { mutableFloatStateOf(config.touchImpulse) }
     var parallaxEnabled by remember { mutableStateOf(config.parallaxEnabled) }
 
     var autoFillCircle by remember { mutableStateOf(config.autoFillCircle) }
 
     var showQuickActions by remember { mutableStateOf(config.showQuickActions) }
     var showToolToolbar by remember { mutableStateOf(config.showToolToolbar) }
-    var showSettingsTabs by remember { mutableStateOf(config.showSettingsTabs) }
 
     // Mask editing history with robust snapshot-based Undo / Redo stacks
     val strokes = remember { mutableStateListOf<MaskDrawStroke>() }
@@ -168,7 +170,7 @@ fun DropWallConfigScreen() {
     var brushSize by remember { mutableFloatStateOf(36f) }
     var toolMode by remember { mutableStateOf(CanvasToolMode.DRAW) }
 
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     var wallpaperImageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var savedMaskBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -236,6 +238,7 @@ fun DropWallConfigScreen() {
                 damping = updated.damping
                 tiltSensitivity = updated.tiltSensitivity
                 touchRadius = updated.touchRadius
+                touchImpulse = updated.touchImpulse
                 autoFillCircle = updated.autoFillCircle
 
                 persistConfig(updated)
@@ -307,6 +310,7 @@ fun DropWallConfigScreen() {
                 damping = updated.damping
                 tiltSensitivity = updated.tiltSensitivity
                 touchRadius = updated.touchRadius
+                touchImpulse = updated.touchImpulse
                 autoFillCircle = updated.autoFillCircle
                 persistConfig(updated)
                 currentScreen = AppScreen.EDITOR
@@ -333,7 +337,7 @@ fun DropWallConfigScreen() {
                         putExtra(Intent.EXTRA_SUBJECT, "LIQUIWALL Project Export")
                         putExtra(
                             Intent.EXTRA_TEXT,
-                            "LIQUIWALL Project:\nImage Path: ${projConfig.customImagePath}\nMask Path: ${projConfig.customMaskPath}\nStiffness: ${projConfig.stiffness}\nDamping: ${projConfig.damping}\nTilt Sensitivity: ${projConfig.tiltSensitivity}"
+                            "LIQUIWALL Project:\nImage Path: ${projConfig.customImagePath}\nMask Path: ${projConfig.customMaskPath}\nStiffness: ${projConfig.stiffness}\nDamping: ${projConfig.damping}\nTilt Sensitivity: ${projConfig.tiltSensitivity}\nJelly Intensity: ${projConfig.touchImpulse}"
                         )
                     }
                     context.startActivity(Intent.createChooser(shareIntent, "Export Project"))
@@ -349,33 +353,29 @@ fun DropWallConfigScreen() {
         return
     }
 
+    // ── Single Screen Layout matching User's Drawing (LIQUIWALL, Home, Apply, Wallpaper, Preview, Bottom Glass Toolbar with ...) ──
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .background(AppAccentColor),
-                        )
-                        Text(
-                            text = stringResource(R.string.app_name),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                        )
-                    }
+                    Text(
+                        text = "LIQUIWALL",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                    )
                 },
                 actions = {
-                    FilledTonalButton(
-                        onClick = { currentScreen = AppScreen.WELCOME },
-                        shape = RectangleShape,
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .background(Color.Black.copy(alpha = 0.35f), RectangleShape)
+                            .border(1.dp, Color.White.copy(alpha = 0.4f), RectangleShape)
+                            .clickable { currentScreen = AppScreen.WELCOME }
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(text = "Home", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(text = "home", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -386,21 +386,55 @@ fun DropWallConfigScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // ── Sharp Square Canvas Preview Frame (Zero Rounding, Height 540dp) ──
+            // ── Transparent Blurred Action Row ("apply" and "wallpaper") ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .background(AppAccentColor.copy(alpha = 0.75f), RectangleShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.5f), RectangleShape)
+                        .clickable {
+                            if (previewSize.width > 0 && previewSize.height > 0) {
+                                syncMaskToMeshAndDisk(previewSize.width, previewSize.height)
+                            }
+                            persistConfig(config)
+                            launchLiveWallpaperChooser(context)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "apply", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .background(Color.Black.copy(alpha = 0.4f), RectangleShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.4f), RectangleShape)
+                        .clickable { currentScreen = AppScreen.GALLERY },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "wallpaper", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                }
+            }
+
+            // ── Center Preview Canvas Frame (" imaginea aici ") ──
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 2.dp),
+                    .weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
                 ElevatedCard(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(540.dp)
+                        .fillMaxSize()
                         .border(
                             width = 2.dp,
                             color = Color.LightGray,
@@ -438,102 +472,15 @@ fun DropWallConfigScreen() {
                                 syncMaskToMeshAndDisk(previewSize.width, previewSize.height)
                             },
                             onPhysicsDisturbance = { touchX, touchY, dx, dy ->
-                                previewMesh.applyTouchDisturbance(touchX, touchY, dx, dy, touchRadius, config.touchImpulse)
+                                previewMesh.applyTouchDisturbance(touchX, touchY, dx, dy, touchRadius, touchImpulse)
                             },
                         )
-                    }
-                }
-            }
-
-            // ── Complete Sharp Square Toolbar Bar Directly Below Preview ──
-            if (showToolToolbar) {
-                OutlinedCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RectangleShape,
-                    colors = CardDefaults.outlinedCardColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        FilterChip(
-                            selected = toolMode == CanvasToolMode.DRAW,
-                            onClick = { toolMode = CanvasToolMode.DRAW },
-                            label = { Text(stringResource(R.string.draw_mode), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
-                            shape = RectangleShape,
-                        )
-                        FilterChip(
-                            selected = toolMode == CanvasToolMode.ERASE,
-                            onClick = { toolMode = CanvasToolMode.ERASE },
-                            label = { Text(stringResource(R.string.erase_mode), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
-                            shape = RectangleShape,
-                        )
-                        Spacer(modifier = Modifier.size(2.dp))
-                        OutlinedButton(
-                            onClick = {
-                                if (undoStack.isNotEmpty()) {
-                                    redoStack.add(strokes.toList())
-                                    val previousState = undoStack.removeAt(undoStack.size - 1)
-                                    strokes.clear()
-                                    strokes.addAll(previousState)
-                                    syncMaskToMeshAndDisk(previewSize.width, previewSize.height)
-                                }
-                            },
-                            enabled = undoStack.isNotEmpty(),
-                            shape = RectangleShape,
-                        ) {
-                            Text(stringResource(R.string.undo), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                if (redoStack.isNotEmpty()) {
-                                    undoStack.add(strokes.toList())
-                                    val nextState = redoStack.removeAt(redoStack.size - 1)
-                                    strokes.clear()
-                                    strokes.addAll(nextState)
-                                    syncMaskToMeshAndDisk(previewSize.width, previewSize.height)
-                                }
-                            },
-                            enabled = redoStack.isNotEmpty(),
-                            shape = RectangleShape,
-                        ) {
-                            Text(stringResource(R.string.redo), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                        TextButton(
-                            onClick = {
-                                undoStack.add(strokes.toList())
-                                redoStack.clear()
-                                strokes.clear()
-                                savedMaskBitmap = null
-                                WallpaperBitmapLoader.clearCustomMask(context, config.customImagePath)
-                                previewMesh.setAllWeights(1.0f)
-                                if (config.customMaskPath != null) {
-                                    persistConfig(config.copy(customMaskPath = null))
-                                }
-                                if (previewSize.width > 0 && previewSize.height > 0) {
-                                    reloadPreviewBitmap(previewSize.width, previewSize.height)
-                                }
-                            },
-                        ) {
-                            Text(
-                                text = stringResource(R.string.clear_mask),
-                                color = MaterialTheme.colorScheme.error,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
                     }
                 }
             }
 
             // ── 60 FPS Physics Simulation Ticker for Preview ──
-            LaunchedEffect(stiffness, damping, parallaxEnabled) {
+            LaunchedEffect(stiffness, damping, touchImpulse, parallaxEnabled) {
                 previewMesh.stiffness = stiffness
                 previewMesh.damping = damping
                 var prevNanos = System.nanoTime()
@@ -552,158 +499,218 @@ fun DropWallConfigScreen() {
                 }
             }
 
-            // ── Action Controls (Apply Wallpaper with Auto-Save, Open Gallery, Reset) ──
-            if (showQuickActions) {
+            // ── Bottom Toolbar Bar (Transparent Blurred Glassmorphism with Three Dots (...) for Settings) ──
+            OutlinedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RectangleShape,
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = Color.Black.copy(alpha = 0.5f),
+                ),
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Button(
+                    FilterChip(
+                        selected = toolMode == CanvasToolMode.DRAW,
+                        onClick = { toolMode = CanvasToolMode.DRAW },
+                        label = { Text("Brush", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RectangleShape,
+                    )
+                    FilterChip(
+                        selected = toolMode == CanvasToolMode.ERASE,
+                        onClick = { toolMode = CanvasToolMode.ERASE },
+                        label = { Text("Eraser", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RectangleShape,
+                    )
+                    TextButton(
                         onClick = {
-                            // Automatically save mask and configuration before applying live wallpaper
-                            if (previewSize.width > 0 && previewSize.height > 0) {
+                            if (undoStack.isNotEmpty()) {
+                                redoStack.add(strokes.toList())
+                                val previousState = undoStack.removeAt(undoStack.size - 1)
+                                strokes.clear()
+                                strokes.addAll(previousState)
                                 syncMaskToMeshAndDisk(previewSize.width, previewSize.height)
                             }
-                            persistConfig(config)
-                            launchLiveWallpaperChooser(context)
                         },
-                        modifier = Modifier.weight(1.3f).height(48.dp),
-                        shape = RectangleShape,
-                        colors = ButtonDefaults.buttonColors(containerColor = AppAccentColor),
+                        enabled = undoStack.isNotEmpty(),
                     ) {
-                        Text(text = stringResource(R.string.apply_wallpaper), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                        Text("Undo", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
-                    FilledTonalButton(
+                    TextButton(
                         onClick = {
-                            currentScreen = AppScreen.GALLERY
+                            if (redoStack.isNotEmpty()) {
+                                undoStack.add(strokes.toList())
+                                val nextState = redoStack.removeAt(redoStack.size - 1)
+                                strokes.clear()
+                                strokes.addAll(nextState)
+                                syncMaskToMeshAndDisk(previewSize.width, previewSize.height)
+                            }
                         },
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        shape = RectangleShape,
+                        enabled = redoStack.isNotEmpty(),
                     ) {
-                        Text(text = stringResource(R.string.open_gallery), fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1)
+                        Text("Redo", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
-                }
-
-                if (config.customImagePath != null) {
-                    OutlinedButton(
+                    TextButton(
                         onClick = {
-                            strokes.clear()
-                            undoStack.clear()
+                            undoStack.add(strokes.toList())
                             redoStack.clear()
+                            strokes.clear()
                             savedMaskBitmap = null
                             WallpaperBitmapLoader.clearCustomMask(context, config.customImagePath)
-                            WallpaperBitmapLoader.clearCustomImage(context)
                             previewMesh.setAllWeights(1.0f)
-                            val updated = DropWallConfig.loadForWallpaper(context, null)
-                            persistConfig(updated)
+                            if (config.customMaskPath != null) {
+                                persistConfig(config.copy(customMaskPath = null))
+                            }
                             if (previewSize.width > 0 && previewSize.height > 0) {
                                 reloadPreviewBitmap(previewSize.width, previewSize.height)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().height(42.dp),
-                        shape = RectangleShape,
                     ) {
-                        Text(stringResource(R.string.reset_default_photo), fontSize = 13.sp)
+                        Text(
+                            text = "Clear",
+                            color = Color.Red,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
-                }
-            }
-
-            // ── Settings Tabs ──
-            if (showSettingsTabs) {
-                PrimaryTabRow(
-                    selectedTabIndex = selectedTabIndex,
-                    modifier = Modifier.clip(RectangleShape),
-                ) {
-                    Tab(
-                        selected = selectedTabIndex == 0,
-                        onClick = { selectedTabIndex = 0 },
-                        text = { Text(stringResource(R.string.tab_mask), fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
-                    )
-                    Tab(
-                        selected = selectedTabIndex == 1,
-                        onClick = { selectedTabIndex = 1 },
-                        text = { Text(stringResource(R.string.tab_physics), fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
-                    )
-                    Tab(
-                        selected = selectedTabIndex == 2,
-                        onClick = { selectedTabIndex = 2 },
-                        text = { Text(stringResource(R.string.tab_theme), fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
-                    )
-                }
-
-                if (selectedTabIndex == 0) {
-                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RectangleShape) {
-                        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(stringResource(R.string.auto_fill_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                    Text(stringResource(R.string.auto_fill_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Switch(checked = autoFillCircle, onCheckedChange = { autoFillCircle = it; persistConfig(config.copy(autoFillCircle = it)) })
-                            }
-                            Column {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(stringResource(R.string.brush_size), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                    Text("${brushSize.toInt()} px", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppAccentColor)
-                                }
-                                Slider(value = brushSize, onValueChange = { brushSize = it }, valueRange = 12f..90f)
-                            }
-                            Column {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(stringResource(R.string.touch_radius), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                    Text("${touchRadius.toInt()} px", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppAccentColor)
-                                }
-                                Slider(value = touchRadius, onValueChange = { touchRadius = it; persistConfig(config.copy(touchRadius = it)) }, valueRange = 100f..500f)
-                            }
-                        }
-                    }
-                }
-
-                if (selectedTabIndex == 1) {
-                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RectangleShape) {
-                        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            Text(stringResource(R.string.physics_settings), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Column {
-                                Text(stringResource(R.string.stiffness_label, stiffness), style = MaterialTheme.typography.bodyMedium)
-                                Slider(value = stiffness, onValueChange = { stiffness = it; persistConfig(config.copy(stiffness = it)) }, valueRange = 20f..200f)
-                            }
-                            Column {
-                                Text(stringResource(R.string.damping_label, damping), style = MaterialTheme.typography.bodyMedium)
-                                Slider(value = damping, onValueChange = { damping = it; persistConfig(config.copy(damping = it)) }, valueRange = 4f..35f)
-                            }
-                        }
-                    }
-                }
-
-                if (selectedTabIndex == 2) {
-                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RectangleShape) {
-                        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(stringResource(R.string.master_physics_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                    Text(stringResource(R.string.master_physics_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Switch(
-                                    checked = parallaxEnabled,
-                                    onCheckedChange = {
-                                        parallaxEnabled = it
-                                        persistConfig(config.copy(parallaxEnabled = it))
-                                    },
-                                )
-                            }
-                            Column {
-                                Text(stringResource(R.string.tilt_label, tiltSensitivity), style = MaterialTheme.typography.bodyMedium)
-                                Slider(value = tiltSensitivity, onValueChange = { tiltSensitivity = it; persistConfig(config.copy(tiltSensitivity = it)) }, valueRange = 10f..150f)
-                            }
-                        }
+                    // Three Dots (...) Button for Accelerometer & Jelly Settings Dialog
+                    TextButton(
+                        onClick = { showSettingsDialog = true }
+                    ) {
+                        Text(
+                            text = "...",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
                     }
                 }
             }
         }
+    }
+
+    // ── Accelerometer & Jelly Settings Dialog (Opened via Three Dots ...) ──
+    if (showSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { showSettingsDialog = false },
+            shape = RectangleShape,
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text("Accelerometer & Jelly Settings", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    // Auto-Fill Switch
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Auto-Fill Enclosed Loops", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                        Switch(
+                            checked = autoFillCircle,
+                            onCheckedChange = { autoFillCircle = it; persistConfig(config.copy(autoFillCircle = it)) }
+                        )
+                    }
+
+                    // Accelerometer Motion Switch
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Accelerometer Motion", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                        Switch(
+                            checked = parallaxEnabled,
+                            onCheckedChange = {
+                                parallaxEnabled = it
+                                persistConfig(config.copy(parallaxEnabled = it))
+                            }
+                        )
+                    }
+
+                    // Jelly Intensity / Touch Impulse
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Jelly Intensity", style = MaterialTheme.typography.bodySmall)
+                            Text(String.format(Locale.US, "%.0f", touchImpulse), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = AppAccentColor)
+                        }
+                        Slider(
+                            value = touchImpulse,
+                            onValueChange = {
+                                touchImpulse = it
+                                persistConfig(config.copy(touchImpulse = it))
+                            },
+                            valueRange = 200f..2500f
+                        )
+                    }
+
+                    // Brush Size
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Brush Size", style = MaterialTheme.typography.bodySmall)
+                            Text("${brushSize.toInt()} px", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = AppAccentColor)
+                        }
+                        Slider(value = brushSize, onValueChange = { brushSize = it }, valueRange = 12f..90f)
+                    }
+
+                    // Touch Radius
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Touch Ripple Radius", style = MaterialTheme.typography.bodySmall)
+                            Text("${touchRadius.toInt()} px", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = AppAccentColor)
+                        }
+                        Slider(value = touchRadius, onValueChange = { touchRadius = it; persistConfig(config.copy(touchRadius = it)) }, valueRange = 100f..500f)
+                    }
+
+                    // Stiffness
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Spring Stiffness", style = MaterialTheme.typography.bodySmall)
+                            Text(String.format(Locale.US, "%.1f", stiffness), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = AppAccentColor)
+                        }
+                        Slider(value = stiffness, onValueChange = { stiffness = it; persistConfig(config.copy(stiffness = it)) }, valueRange = 20f..200f)
+                    }
+
+                    // Damping
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Damping Coefficient", style = MaterialTheme.typography.bodySmall)
+                            Text(String.format(Locale.US, "%.2f", damping), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = AppAccentColor)
+                        }
+                        Slider(value = damping, onValueChange = { damping = it; persistConfig(config.copy(damping = it)) }, valueRange = 4f..35f)
+                    }
+
+                    // Gyro Tilt Sensitivity
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Gyro Sensitivity", style = MaterialTheme.typography.bodySmall)
+                            Text(String.format(Locale.US, "%.1f", tiltSensitivity), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = AppAccentColor)
+                        }
+                        Slider(value = tiltSensitivity, onValueChange = { tiltSensitivity = it; persistConfig(config.copy(tiltSensitivity = it)) }, valueRange = 10f..150f)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showSettingsDialog = false },
+                    shape = RectangleShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = AppAccentColor)
+                ) {
+                    Text("Close", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }
 
@@ -754,7 +761,6 @@ fun InternalGalleryScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Grid of Wallpapers with Real Thumbnails, Prominent Import Tile, and Delete/Export Actions
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -869,7 +875,6 @@ fun InternalGalleryScreen(
                                 }
                             }
 
-                            // Title & Delete/Export Actions Banner Overlay at bottom
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -904,7 +909,6 @@ fun InternalGalleryScreen(
                                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            // Export button
                                             Text(
                                                 text = stringResource(R.string.export_project),
                                                 color = Color.Cyan,
@@ -917,7 +921,6 @@ fun InternalGalleryScreen(
                                                     }
                                                     .padding(horizontal = 6.dp, vertical = 3.dp)
                                             )
-                                            // Delete button
                                             Text(
                                                 text = stringResource(R.string.delete_project),
                                                 color = Color.Red,
@@ -969,7 +972,7 @@ fun WelcomeScreen(
                                 .background(accentColor),
                         )
                         Text(
-                            text = stringResource(R.string.app_name),
+                            text = "LIQUIWALL",
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp,
                         )
@@ -988,7 +991,7 @@ fun WelcomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "LIQUIWALL Live Wallpaper",
+                text = "LIQUIWALL",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,

@@ -4,8 +4,8 @@ import kotlin.math.min
 
 /**
  * 2D Mass-Spring-Damper lattice for fluid/jelly mesh deformation (Origin OS droplet effect).
- * Features multi-step sub-stepping physics calculation per frame for extreme precision and zero tearing.
- * Supports active corner and border wobble physics.
+ * Features localized touch disturbance and independent vertex response so touching one place
+ * pulls strictly that local spot without dragging distant parts of the screen.
  */
 class SpringMeshPhysics(
     val cols: Int = 16,
@@ -22,10 +22,10 @@ class SpringMeshPhysics(
     // Per-vertex mask weights (0.0 = rigid, 1.0 = full jelly wobble)
     val vertexMaskWeights: FloatArray = FloatArray(vertexCount) { 1.0f }
 
-    var stiffness: Float = 60.0f          // Softer spring constant
-    var damping: Float = 16.0f            // Higher damping for smooth settling
+    var stiffness: Float = 80.0f          // Stiff springs for local restoration
+    var damping: Float = 20.0f            // High damping to settle quickly
     var mass: Float = 1.0f
-    var neighborCoupling: Float = 35.0f
+    var neighborCoupling: Float = 10.0f   // Low coupling so touches remain strictly local
 
     var tiltX: Float = 0.0f
     var tiltY: Float = 0.0f
@@ -113,9 +113,9 @@ class SpringMeshPhysics(
 
                     if (distSq < rSq) {
                         val norm = 1.0f - (distSq / rSq)
-                        val falloff = norm * norm
-                        val pushX = if (deltaX == 0f && deltaY == 0f) dx * 0.25f else deltaX * 0.35f
-                        val pushY = if (deltaX == 0f && deltaY == 0f) dy * 0.25f else deltaY * 0.35f
+                        val falloff = norm * norm * norm // Sharper local falloff
+                        val pushX = if (deltaX == 0f && deltaY == 0f) dx * 0.2f else deltaX * 0.3f
+                        val pushY = if (deltaX == 0f && deltaY == 0f) dy * 0.2f else deltaY * 0.3f
                         velocities[idx] += pushX * falloff * weight * (impulseFactor * 0.02f)
                         velocities[idx + 1] += pushY * falloff * weight * (impulseFactor * 0.02f)
                     }
@@ -126,7 +126,6 @@ class SpringMeshPhysics(
     }
 
     fun update(deltaTimeSeconds: Float) {
-        // Multi-step physics calculation (6 substeps per frame for extreme precision and zero tearing)
         val substeps = 6
         val subDt = (deltaTimeSeconds / substeps).coerceIn(0.0005f, 0.01f)
 
@@ -141,14 +140,15 @@ class SpringMeshPhysics(
         val numRows = rows
         val stride = (numCols + 1) * 2
 
-        // 1. Reset forces and accumulate anchor spring restoration & sensor tilt (including corner vertices)
+        // 1. Reset forces and accumulate anchor spring restoration & sensor tilt
         var idx = 0
         for (r in 0..numRows) {
             for (c in 0..numCols) {
+                val isCorner = (r == 0 && c == 0) || (r == 0 && c == numCols) || (r == numRows && c == 0) || (r == numRows && c == numCols)
                 val vIdx = idx / 2
                 val weight = vertexMaskWeights[vIdx]
 
-                if (weight <= 0.001f) {
+                if (isCorner || weight <= 0.001f) {
                     forces[idx] = 0.0f
                     forces[idx + 1] = 0.0f
                 } else {
@@ -166,7 +166,7 @@ class SpringMeshPhysics(
             }
         }
 
-        // 2. Neighbor coupling springs for jelly wave propagation
+        // 2. Low neighbor coupling for strict local isolation of touches
         for (r in 1 until numRows) {
             val rowOffset = r * stride
             for (c in 1 until numCols) {
@@ -210,16 +210,17 @@ class SpringMeshPhysics(
             }
         }
 
-        // 3. Integration step (Semi-implicit Euler) with strict bounds across full mesh including corners
+        // 3. Integration step (Semi-implicit Euler) with strict local displacement limits
         idx = 0
-        val maxDisplacement = min(meshWidth, meshHeight) * 0.12f
+        val maxDisplacement = min(meshWidth, meshHeight) * 0.08f
 
         for (r in 0..numRows) {
             for (c in 0..numCols) {
+                val isCorner = (r == 0 && c == 0) || (r == 0 && c == numCols) || (r == numRows && c == 0) || (r == numRows && c == numCols)
                 val vIdx = idx / 2
                 val weight = vertexMaskWeights[vIdx]
 
-                if (weight <= 0.001f) {
+                if (isCorner || weight <= 0.001f) {
                     currentVerts[idx] = origVerts[idx]
                     currentVerts[idx + 1] = origVerts[idx + 1]
                     velocities[idx] = 0.0f
@@ -231,8 +232,8 @@ class SpringMeshPhysics(
                     var vx = velocities[idx] + ax * dt
                     var vy = velocities[idx + 1] + ay * dt
 
-                    vx *= 0.98f
-                    vy *= 0.98f
+                    vx *= 0.95f
+                    vy *= 0.95f
 
                     velocities[idx] = vx
                     velocities[idx + 1] = vy
