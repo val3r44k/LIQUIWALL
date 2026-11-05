@@ -5,7 +5,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Matrix as AndroidMatrix
 import android.graphics.Paint as AndroidPaint
+import android.graphics.Path as AndroidPath
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.PorterDuffXfermode
@@ -81,6 +83,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -133,6 +136,8 @@ data class LocalGalleryItem(
     val isDefault: Boolean = false,
 )
 
+private val AppAccentColor = Color(0xFFCC0000)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DropWallConfigScreen() {
@@ -148,7 +153,6 @@ fun DropWallConfigScreen() {
     var tiltSensitivity by remember { mutableFloatStateOf(config.tiltSensitivity) }
     var touchRadius by remember { mutableFloatStateOf(config.touchRadius) }
     var parallaxEnabled by remember { mutableStateOf(config.parallaxEnabled) }
-    var themeAccentColor by remember { mutableLongStateOf(config.themeAccentColor) }
 
     var autoFillCircle by remember { mutableStateOf(config.autoFillCircle) }
 
@@ -179,6 +183,7 @@ fun DropWallConfigScreen() {
         scope.launch {
             val bmp = withContext(Dispatchers.IO) {
                 WallpaperBitmapLoader.loadBackground(
+                    context = context,
                     targetWidth = w, targetHeight = h, customPath = config.customImagePath,
                 )
             }
@@ -186,7 +191,7 @@ fun DropWallConfigScreen() {
             previewMesh.setup(w.toFloat(), h.toFloat())
 
             val mask = if (strokes.isNotEmpty()) {
-                createMaskBitmapFromStrokes(w, h, strokes.toList())
+                createMaskBitmapFromStrokes(w, h, w, h, strokes.toList())
             } else {
                 WallpaperBitmapLoader.loadMask(w, h, config.customMaskPath)
             }
@@ -245,7 +250,11 @@ fun DropWallConfigScreen() {
     }
 
     fun syncMaskToMeshAndDisk(width: Int, height: Int) {
-        val maskBitmap = createMaskBitmapFromStrokes(width, height, strokes)
+        if (width <= 0 || height <= 0) return
+        val bgWidth = wallpaperImageBitmap?.width ?: width
+        val bgHeight = wallpaperImageBitmap?.height ?: height
+
+        val maskBitmap = createMaskBitmapFromStrokes(bgWidth, bgHeight, width, height, strokes)
         if (maskBitmap != null) {
             val maskPath = WallpaperBitmapLoader.saveCustomMaskBitmap(context, config.customImagePath, maskBitmap)
             savedMaskBitmap = maskBitmap.asImageBitmap()
@@ -265,7 +274,7 @@ fun DropWallConfigScreen() {
     if (currentScreen == AppScreen.WELCOME) {
         WelcomeScreen(
             hasExistingProject = !config.customImagePath.isNullOrEmpty(),
-            accentColor = Color(themeAccentColor),
+            accentColor = AppAccentColor,
             onOpenGallery = {
                 currentScreen = AppScreen.GALLERY
             },
@@ -286,7 +295,7 @@ fun DropWallConfigScreen() {
 
     if (currentScreen == AppScreen.GALLERY) {
         InternalGalleryScreen(
-            accentColor = Color(themeAccentColor),
+            accentColor = AppAccentColor,
             currentCustomImagePath = config.customImagePath,
             onSelectWallpaper = { selectedPath ->
                 strokes.clear()
@@ -352,8 +361,7 @@ fun DropWallConfigScreen() {
                         Box(
                             modifier = Modifier
                                 .size(12.dp)
-                                .clip(CircleShape)
-                                .background(Color(themeAccentColor)),
+                                .background(AppAccentColor),
                         )
                         Text(
                             text = stringResource(R.string.app_name),
@@ -365,7 +373,7 @@ fun DropWallConfigScreen() {
                 actions = {
                     FilledTonalButton(
                         onClick = { currentScreen = AppScreen.WELCOME },
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RectangleShape,
                     ) {
                         Text(text = "Home", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
@@ -382,7 +390,7 @@ fun DropWallConfigScreen() {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // ── Full-Screen Aspect Ratio 1:1 Matching Preview Frame (Height 580dp) ──
+            // ── Sharp Square Canvas Preview Frame (Zero Rounding, Height 540dp) ──
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -392,13 +400,13 @@ fun DropWallConfigScreen() {
                 ElevatedCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(580.dp)
+                        .height(540.dp)
                         .border(
                             width = 2.dp,
                             color = Color.LightGray,
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RectangleShape
                         ),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RectangleShape,
                     elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp),
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
@@ -437,11 +445,11 @@ fun DropWallConfigScreen() {
                 }
             }
 
-            // ── Complete Toolbar Bar Directly Below Preview: Draw, Erase, Undo, Redo, Clear ──
+            // ── Complete Sharp Square Toolbar Bar Directly Below Preview ──
             if (showToolToolbar) {
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RectangleShape,
                     colors = CardDefaults.outlinedCardColors(
                         containerColor = MaterialTheme.colorScheme.surface,
                     ),
@@ -457,12 +465,14 @@ fun DropWallConfigScreen() {
                         FilterChip(
                             selected = toolMode == CanvasToolMode.DRAW,
                             onClick = { toolMode = CanvasToolMode.DRAW },
-                            label = { Text("Draw", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
+                            label = { Text(stringResource(R.string.draw_mode), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
+                            shape = RectangleShape,
                         )
                         FilterChip(
                             selected = toolMode == CanvasToolMode.ERASE,
                             onClick = { toolMode = CanvasToolMode.ERASE },
-                            label = { Text("Erase", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
+                            label = { Text(stringResource(R.string.erase_mode), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
+                            shape = RectangleShape,
                         )
                         Spacer(modifier = Modifier.size(2.dp))
                         OutlinedButton(
@@ -476,9 +486,9 @@ fun DropWallConfigScreen() {
                                 }
                             },
                             enabled = undoStack.isNotEmpty(),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RectangleShape,
                         ) {
-                            Text("Undo", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.undo), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                         OutlinedButton(
                             onClick = {
@@ -491,9 +501,9 @@ fun DropWallConfigScreen() {
                                 }
                             },
                             enabled = redoStack.isNotEmpty(),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RectangleShape,
                         ) {
-                            Text("Redo", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.redo), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                         TextButton(
                             onClick = {
@@ -512,7 +522,7 @@ fun DropWallConfigScreen() {
                             },
                         ) {
                             Text(
-                                text = "Clear",
+                                text = stringResource(R.string.clear_mask),
                                 color = MaterialTheme.colorScheme.error,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -558,19 +568,19 @@ fun DropWallConfigScreen() {
                             launchLiveWallpaperChooser(context)
                         },
                         modifier = Modifier.weight(1.3f).height(48.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(themeAccentColor)),
+                        shape = RectangleShape,
+                        colors = ButtonDefaults.buttonColors(containerColor = AppAccentColor),
                     ) {
-                        Text(text = stringResource(R.string.set_wallpaper), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                        Text(text = stringResource(R.string.apply_wallpaper), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
                     }
                     FilledTonalButton(
                         onClick = {
                             currentScreen = AppScreen.GALLERY
                         },
                         modifier = Modifier.weight(1f).height(48.dp),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RectangleShape,
                     ) {
-                        Text(text = "Open Gallery", fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1)
+                        Text(text = stringResource(R.string.open_gallery), fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1)
                     }
                 }
 
@@ -591,7 +601,7 @@ fun DropWallConfigScreen() {
                             }
                         },
                         modifier = Modifier.fillMaxWidth().height(42.dp),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RectangleShape,
                     ) {
                         Text(stringResource(R.string.reset_default_photo), fontSize = 13.sp)
                     }
@@ -602,46 +612,46 @@ fun DropWallConfigScreen() {
             if (showSettingsTabs) {
                 PrimaryTabRow(
                     selectedTabIndex = selectedTabIndex,
-                    modifier = Modifier.clip(RoundedCornerShape(12.dp)),
+                    modifier = Modifier.clip(RectangleShape),
                 ) {
                     Tab(
                         selected = selectedTabIndex == 0,
                         onClick = { selectedTabIndex = 0 },
-                        text = { Text("Mask Studio", fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
+                        text = { Text(stringResource(R.string.tab_mask), fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
                     )
                     Tab(
                         selected = selectedTabIndex == 1,
                         onClick = { selectedTabIndex = 1 },
-                        text = { Text("Spring Physics", fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
+                        text = { Text(stringResource(R.string.tab_physics), fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
                     )
                     Tab(
                         selected = selectedTabIndex == 2,
                         onClick = { selectedTabIndex = 2 },
-                        text = { Text("Jelly & Theme", fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
+                        text = { Text(stringResource(R.string.tab_theme), fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
                     )
                 }
 
                 if (selectedTabIndex == 0) {
-                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RectangleShape) {
                         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(stringResource(R.string.auto_fill_circle_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                    Text(stringResource(R.string.auto_fill_circle_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(stringResource(R.string.auto_fill_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text(stringResource(R.string.auto_fill_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(checked = autoFillCircle, onCheckedChange = { autoFillCircle = it; persistConfig(config.copy(autoFillCircle = it)) })
                             }
                             Column {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text(stringResource(R.string.brush_size), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                    Text("${brushSize.toInt()} px", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(themeAccentColor))
+                                    Text("${brushSize.toInt()} px", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppAccentColor)
                                 }
                                 Slider(value = brushSize, onValueChange = { brushSize = it }, valueRange = 12f..90f)
                             }
                             Column {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Touch Point Radius", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                    Text("${touchRadius.toInt()} px", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(themeAccentColor))
+                                    Text(stringResource(R.string.touch_radius), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                    Text("${touchRadius.toInt()} px", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppAccentColor)
                                 }
                                 Slider(value = touchRadius, onValueChange = { touchRadius = it; persistConfig(config.copy(touchRadius = it)) }, valueRange = 100f..500f)
                             }
@@ -650,7 +660,7 @@ fun DropWallConfigScreen() {
                 }
 
                 if (selectedTabIndex == 1) {
-                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RectangleShape) {
                         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                             Text(stringResource(R.string.physics_settings), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Column {
@@ -666,7 +676,7 @@ fun DropWallConfigScreen() {
                 }
 
                 if (selectedTabIndex == 2) {
-                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RectangleShape) {
                         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -674,8 +684,8 @@ fun DropWallConfigScreen() {
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("Master Jelly Physics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                    Text("Enable or lock jelly wobble effect", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(stringResource(R.string.master_physics_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text(stringResource(R.string.master_physics_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = parallaxEnabled,
@@ -689,32 +699,6 @@ fun DropWallConfigScreen() {
                                 Text(stringResource(R.string.tilt_label, tiltSensitivity), style = MaterialTheme.typography.bodyMedium)
                                 Slider(value = tiltSensitivity, onValueChange = { tiltSensitivity = it; persistConfig(config.copy(tiltSensitivity = it)) }, valueRange = 10f..150f)
                             }
-
-                            // Theme Accent Color Picker
-                            Text("Theme Accent Color", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                val colors = listOf(0xFFCC0000L, 0xFF1976D2L, 0xFF388E3CL, 0xFFF57C00L, 0xFF7B1FA2L, 0xFF37474FL)
-                                colors.forEach { colorVal ->
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(colorVal))
-                                            .border(
-                                                width = if (themeAccentColor == colorVal) 3.dp else 1.dp,
-                                                color = if (themeAccentColor == colorVal) Color.White else Color.Transparent,
-                                                shape = CircleShape
-                                            )
-                                            .clickable {
-                                                themeAccentColor = colorVal
-                                                persistConfig(config.copy(themeAccentColor = colorVal))
-                                            }
-                                    )
-                                }
-                            }
                         }
                     }
                 }
@@ -724,7 +708,7 @@ fun DropWallConfigScreen() {
 }
 
 /**
- * Clean Internal Local Gallery Screen with Delete and Export buttons on each project card.
+ * Clean Square Internal Local Gallery Screen with Delete and Export buttons on each project card.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -753,7 +737,7 @@ fun InternalGalleryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Internal Gallery", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
+                title = { Text(stringResource(R.string.gallery_title), fontWeight = FontWeight.Bold, fontSize = 20.sp) },
                 navigationIcon = {
                     TextButton(onClick = onBack) {
                         Text("< Back", color = accentColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -786,10 +770,10 @@ fun InternalGalleryScreen(
                             .border(
                                 width = 2.dp,
                                 color = accentColor,
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RectangleShape
                             )
                             .clickable { onAddCustomPhoto() },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RectangleShape,
                         colors = CardDefaults.outlinedCardColors(
                             containerColor = accentColor.copy(alpha = 0.08f)
                         )
@@ -806,7 +790,6 @@ fun InternalGalleryScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(52.dp)
-                                        .clip(CircleShape)
                                         .background(accentColor),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -814,16 +797,10 @@ fun InternalGalleryScreen(
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    text = "Import Photo",
+                                    text = stringResource(R.string.import_photo),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
                                     color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Add from Device",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -837,7 +814,12 @@ fun InternalGalleryScreen(
                     LaunchedEffect(item.imagePath) {
                         if (item.imagePath != null) {
                             withContext(Dispatchers.IO) {
-                                val bmp = WallpaperBitmapLoader.loadBackground(240, 420, item.imagePath)
+                                val bmp = WallpaperBitmapLoader.loadBackground(
+                                    context = context,
+                                    targetWidth = 240,
+                                    targetHeight = 420,
+                                    customPath = item.imagePath
+                                )
                                 thumbnailBitmap = bmp.asImageBitmap()
                             }
                         }
@@ -850,10 +832,10 @@ fun InternalGalleryScreen(
                             .border(
                                 width = if (isSelected) 3.dp else 1.dp,
                                 color = if (isSelected) accentColor else Color.LightGray,
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RectangleShape,
                             )
                             .clickable { onSelectWallpaper(item.imagePath) },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RectangleShape,
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = if (isSelected) 8.dp else 2.dp)
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
@@ -875,7 +857,6 @@ fun InternalGalleryScreen(
                                         Box(
                                             modifier = Modifier
                                                 .size(40.dp)
-                                                .clip(CircleShape)
                                                 .background(accentColor)
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
@@ -911,7 +892,7 @@ fun InternalGalleryScreen(
                                         )
                                         if (isSelected) {
                                             Text(
-                                                text = "ACTIVE",
+                                                text = stringResource(R.string.active_badge),
                                                 color = accentColor,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.ExtraBold
@@ -925,12 +906,12 @@ fun InternalGalleryScreen(
                                         ) {
                                             // Export button
                                             Text(
-                                                text = "Export",
+                                                text = stringResource(R.string.export_project),
                                                 color = Color.Cyan,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 modifier = Modifier
-                                                    .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                                    .background(Color.White.copy(alpha = 0.15f), RectangleShape)
                                                     .clickable {
                                                         onExportWallpaper(item.imagePath)
                                                     }
@@ -938,12 +919,12 @@ fun InternalGalleryScreen(
                                             )
                                             // Delete button
                                             Text(
-                                                text = "Delete",
+                                                text = stringResource(R.string.delete_project),
                                                 color = Color.Red,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 modifier = Modifier
-                                                    .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                                    .background(Color.White.copy(alpha = 0.15f), RectangleShape)
                                                     .clickable {
                                                         onDeleteWallpaper(item)
                                                         items.remove(item)
@@ -985,7 +966,6 @@ fun WelcomeScreen(
                         Box(
                             modifier = Modifier
                                 .size(12.dp)
-                                .clip(CircleShape)
                                 .background(accentColor),
                         )
                         Text(
@@ -1026,10 +1006,10 @@ fun WelcomeScreen(
                 Button(
                     onClick = onResumeProject,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RectangleShape,
                     colors = ButtonDefaults.buttonColors(containerColor = accentColor),
                 ) {
-                    Text(text = "Resume Last Project", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                    Text(text = stringResource(R.string.resume_project), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -1037,19 +1017,19 @@ fun WelcomeScreen(
             Button(
                 onClick = onImportPhoto,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(8.dp),
+                shape = RectangleShape,
                 colors = ButtonDefaults.buttonColors(containerColor = accentColor),
             ) {
-                Text(text = "+ Import Photo", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                Text(text = "+ ${stringResource(R.string.import_photo)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
             }
             Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedButton(
                 onClick = onOpenGallery,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(8.dp),
+                shape = RectangleShape,
             ) {
-                Text(text = "Open Internal Gallery", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(text = stringResource(R.string.open_gallery), fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
     }
@@ -1057,7 +1037,7 @@ fun WelcomeScreen(
 
 /**
  * JellyWallpaperEditorScreen:
- * Renders wallpaper mesh warp, live real-time stroke preview, real-time Eraser Brush,
+ * Renders wallpaper mesh warp, ultra-smooth responsive lineTo drawing, real-time Eraser Brush,
  * and Double-Tap to Delete Object / Stroke on Canvas.
  */
 @Composable
@@ -1262,15 +1242,26 @@ fun updateMeshWeightsFromMask(mesh: SpringMeshPhysics, mask: Bitmap) {
     mesh.smoothWeights()
 }
 
+/**
+ * Creates 1:1 mathematically synchronized mask bitmap scaled to target background resolution!
+ */
 fun createMaskBitmapFromStrokes(
-    width: Int,
-    height: Int,
+    targetWidth: Int,
+    targetHeight: Int,
+    previewWidth: Int,
+    previewHeight: Int,
     strokes: List<MaskDrawStroke>,
 ): Bitmap? {
-    if (width <= 0 || height <= 0 || strokes.isEmpty()) return null
+    if (targetWidth <= 0 || targetHeight <= 0 || previewWidth <= 0 || previewHeight <= 0 || strokes.isEmpty()) return null
 
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bitmap)
+
+    val scaleX = targetWidth.toFloat() / previewWidth.toFloat()
+    val scaleY = targetHeight.toFloat() / previewHeight.toFloat()
+    val matrix = AndroidMatrix().apply {
+        postScale(scaleX, scaleY)
+    }
 
     val fillPaint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
@@ -1293,9 +1284,11 @@ fun createMaskBitmapFromStrokes(
     }
 
     for (s in strokes) {
-        val nativePath = s.path.asAndroidPath()
+        val nativePath = AndroidPath(s.path.asAndroidPath())
+        nativePath.transform(matrix) // 1:1 exact mathematical coordinate transformation!
+
         val paintToUse = if (s.isEraser) erasePaint else strokePaint
-        paintToUse.strokeWidth = s.strokeWidth
+        paintToUse.strokeWidth = s.strokeWidth * scaleX
 
         if (!s.isEraser && s.isFilled) {
             canvas.drawPath(nativePath, fillPaint)

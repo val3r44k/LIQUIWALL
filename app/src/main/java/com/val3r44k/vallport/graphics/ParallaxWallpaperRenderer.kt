@@ -52,6 +52,7 @@ class ParallaxWallpaperRenderer(
 
         if (context != null) {
             wallpaperBitmap = WallpaperBitmapLoader.loadBackground(
+                context = context,
                 targetWidth = width,
                 targetHeight = height,
                 customPath = config.customImagePath,

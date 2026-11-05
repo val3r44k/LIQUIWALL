@@ -19,20 +19,24 @@ import java.io.FileOutputStream
 import kotlin.math.max
 
 /**
- * Handles loading, center-crop scaling, persistence, background inpainting,
- * per-wallpaper unique mask file isolation, and Base64 serialization.
+ * Handles loading, device screen size optimization, center-crop scaling, persistence,
+ * background inpainting, and per-wallpaper unique mask file isolation.
  */
 object WallpaperBitmapLoader {
 
     private const val TAG = "WallpaperBitmapLoader"
 
     fun loadBackground(
+        context: Context,
         targetWidth: Int,
         targetHeight: Int,
         customPath: String?,
     ): Bitmap {
-        val safeW = maxOf(targetWidth, 1)
-        val safeH = maxOf(targetHeight, 1)
+        val metrics = context.resources.displayMetrics
+        val screenW = maxOf(metrics.widthPixels, 1)
+        val screenH = maxOf(metrics.heightPixels, 1)
+        val safeW = maxOf(targetWidth, screenW)
+        val safeH = maxOf(targetHeight, screenH)
 
         if (!customPath.isNullOrEmpty()) {
             val file = File(customPath)
@@ -52,12 +56,16 @@ object WallpaperBitmapLoader {
     }
 
     fun loadForeground(
+        context: Context,
         targetWidth: Int,
         targetHeight: Int,
         customPath: String?,
     ): Bitmap {
-        val safeW = maxOf(targetWidth, 1)
-        val safeH = maxOf(targetHeight, 1)
+        val metrics = context.resources.displayMetrics
+        val screenW = maxOf(metrics.widthPixels, 1)
+        val screenH = maxOf(metrics.heightPixels, 1)
+        val safeW = maxOf(targetWidth, screenW)
+        val safeH = maxOf(targetHeight, screenH)
 
         if (!customPath.isNullOrEmpty()) {
             val file = File(customPath)
@@ -116,33 +124,6 @@ object WallpaperBitmapLoader {
         return inpainted
     }
 
-    /**
-     * Serializes a Bitmap into a Base64 string for local storage / transfer.
-     */
-    fun bitmapToBase64(bitmap: Bitmap): String {
-        return try {
-            val baos = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
-            Base64.encodeToString(baos.toByteArray(), Base64.DEFAULT)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error encoding bitmap to Base64", e)
-            ""
-        }
-    }
-
-    /**
-     * Deserializes a Base64 string back into a Bitmap.
-     */
-    fun base64ToBitmap(base64Str: String): Bitmap? {
-        return try {
-            val decodedBytes = Base64.decode(base64Str, Base64.DEFAULT)
-            BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error decoding Base64 to bitmap", e)
-            null
-        }
-    }
-
     fun saveCustomImageFromUri(context: Context, uri: Uri): String? {
         return try {
             val timestamp = System.currentTimeMillis()
@@ -159,9 +140,6 @@ object WallpaperBitmapLoader {
         }
     }
 
-    /**
-     * Saves mask bitmap to a UNIQUE file tied specifically to the project's ID.
-     */
     fun saveCustomMaskBitmap(context: Context, imagePath: String?, maskBitmap: Bitmap): String? {
         return try {
             val projId = DropWallConfig.getProjectId(imagePath)
